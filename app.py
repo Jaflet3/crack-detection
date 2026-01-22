@@ -1,10 +1,7 @@
-
 import streamlit as st
 import numpy as np
-import os
-import requests
+import cv2
 from PIL import Image
-import tflite_runtime.interpreter as tflite
 
 # -----------------------------
 # PAGE CONFIG
@@ -16,44 +13,33 @@ st.set_page_config(
 )
 
 st.title("🧱 Concrete Crack Detection System")
-st.caption("CNN-based Structural Health Monitoring")
+st.caption("Image Processing Based Structural Health Monitoring")
 
 # -----------------------------
-# GOOGLE DRIVE MODEL DOWNLOAD
+# FUNCTIONS
 # -----------------------------
-MODEL_PATH = "crack_model.tflite"
-FILE_ID = "YOUR_GOOGLE_DRIVE_FILE_ID"  # Replace with your Google Drive file ID
+def preprocess_image(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    return gray, blur
 
-def download_model(file_id, destination):
-    """Download model from Google Drive."""
-    URL = "https://docs.google.com/uc?export=download"
-    session = requests.Session()
-    response = session.get(URL, params={"id": file_id}, stream=True)
+def crack_detection(blur):
+    _, thresh = cv2.threshold(blur, 120, 255, cv2.THRESH_BINARY_INV)
+    edges = cv2.Canny(blur, 100, 200)
+    return thresh, edges
 
-    token = None
-    for key, value in response.cookies.items():
-        if key.startswith("download_warning"):
-            token = value
+def crack_metrics(thresh, edges):
+    crack_pixels = np.sum(thresh == 255)
+    total_pixels = thresh.size
+    crack_area = (crack_pixels / total_pixels) * 100
+    edge_density = np.sum(edges > 0) / edges.size
+    confidence = min(100, (edge_density * 12000))
+    return round(crack_area, 2), round(edge_density, 4), round(confidence, 2)
 
-    if token:
-        response = session.get(URL, params={"id": file_id, "confirm": token}, stream=True)
-
-    with open(destination, "wb") as f:
-        for chunk in response.iter_content(32768):
-            if chunk:
-                f.write(chunk)
-
-if not os.path.exists(MODEL_PATH):
-    with st.spinner("📥 Downloading CNN model..."):
-        download_model(FILE_ID, MODEL_PATH)
-
-# -----------------------------
-# LOAD TFLITE MODEL
-# -----------------------------
-interpreter = tflite.Interpreter(model_path=MODEL_PATH)
-interpreter.allocate_tensors()
-input_details = interpreter.get_input_details()
-output_details = interpreter.get_output_details()
+def overlay_crack(original, thresh):
+    overlay = original.copy()
+    overlay[thresh == 255] = [255, 0, 0]
+    return overlay
 
 # -----------------------------
 # IMAGE UPLOAD
@@ -65,26 +51,60 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file:
     image = Image.open(uploaded_file).convert("RGB")
-    st.image(image, caption="Uploaded Image", use_column_width=True)
+    image_np = np.array(image)
 
-    # Preprocessing
-    img = image.resize((150, 150))
-    arr = np.array(img, dtype=np.float32) / 255.0
-    arr = np.expand_dims(arr, axis=0)
+    gray, blur = preprocess_image(image_np)
+    thresh, edges = crack_detection(blur)
+    crack_area, edge_density, confidence = crack_metrics(thresh, edges)
 
-    # Prediction
-    interpreter.set_tensor(input_details[0]['index'], arr)
-    interpreter.invoke()
-    prediction = interpreter.get_tensor(output_details[0]['index'])[0][0]
-
-    st.divider()
-    st.subheader("📊 Result")
-
-    if prediction >= 0.5:
-        st.error(f"⚠️ Crack Detected\n\nConfidence: {prediction*100:.2f}%")
-        st.info("🛠 Recommendation: Inspection and repair advised")
+    # Decision Logic
+    if crack_area < 0.2 and edge_density < 0.005:
+        result = "No Crack Detected"
+        severity = "None"
+        recommendation = "Structure is safe"
+        show_overlay = False
     else:
-        st.success(f"✅ No Crack Detected\n\nConfidence: {(1-prediction)*100:.2f}%")
-        st.info("🧱 Structure appears safe")
+        result = "Crack Detected"
+        show_overlay = True
 
+        if crack_area < 1.5:
+            severity = "Low"
+            recommendation = "Monitor periodically"
+        elif crack_area < 5:
+            severity = "Medium"
+            recommendation = "Repair recommended"
+        else:
+            severity = "High"
+            recommendation = "Immediate maintenance required"
 
+    # -----------------------------
+    # DISPLAY IMAGES
+    # -----------------------------
+    col1, col2 = st.columns(2)
+
+    col1.image(image_np, caption="Original Image", use_column_width=True)
+
+    if show_overlay:
+        overlay = overlay_crack(image_np, thresh)
+        col2.image(overlay, caption="Detected Crack Area", use_column_width=True)
+    else:
+        col2.image(image_np, caption="No Crack Found", use_column_width=True)
+
+    # -----------------------------
+    # RESULTS
+    # -----------------------------
+    st.divider()
+    st.subheader("📊 Analysis Results")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Crack Area (%)", crack_area)
+    c2.metric("Edge Density", edge_density)
+    c3.metric("Confidence (%)", confidence)
+
+    if result == "Crack Detected":
+        st.error(f"⚠️ Result: {result}")
+    else:
+        st.success(f"✅ Result: {result}")
+
+    st.info(f"🧱 Severity Level: {severity}")
+    st.write(f"🛠 Recommendation: {recommendation}")
