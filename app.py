@@ -1,3 +1,4 @@
+
 import streamlit as st
 import numpy as np
 import os
@@ -21,9 +22,10 @@ st.caption("CNN-based Structural Health Monitoring")
 # GOOGLE DRIVE MODEL DOWNLOAD
 # -----------------------------
 MODEL_PATH = "crack_model.tflite"
-FILE_ID = "your_google_drive_file_id_here"  # Replace with your link's file ID
+FILE_ID = "YOUR_GOOGLE_DRIVE_FILE_ID"  # Replace with your Google Drive file ID
 
 def download_model(file_id, destination):
+    """Download model from Google Drive."""
     URL = "https://docs.google.com/uc?export=download"
     session = requests.Session()
     response = session.get(URL, params={"id": file_id}, stream=True)
@@ -50,7 +52,6 @@ if not os.path.exists(MODEL_PATH):
 # -----------------------------
 interpreter = tflite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
-
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
@@ -85,3 +86,5 @@ if uploaded_file:
     else:
         st.success(f"✅ No Crack Detected\n\nConfidence: {(1-prediction)*100:.2f}%")
         st.info("🧱 Structure appears safe")
+
+
