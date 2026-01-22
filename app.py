@@ -3,7 +3,7 @@ import numpy as np
 import os
 import requests
 from PIL import Image
-import tensorflow as tf
+import tflite_runtime.interpreter as tflite
 
 # -----------------------------
 # PAGE CONFIG
@@ -20,11 +20,12 @@ st.caption("CNN-based Structural Health Monitoring")
 # -----------------------------
 # GOOGLE DRIVE MODEL DOWNLOAD
 # -----------------------------
-MODEL_PATH = "crack_model.h5"
-FILE_ID = "1nz82zuEBc0y5rcj9X7Uh5YDvv05VkZuc"
+MODEL_PATH = "crack_model.tflite"
+FILE_ID = "your_google_drive_file_id"
 
 def download_model(file_id, destination):
     URL = "https://docs.google.com/uc?export=download"
+    import requests
     session = requests.Session()
     response = session.get(URL, params={"id": file_id}, stream=True)
 
@@ -34,25 +35,25 @@ def download_model(file_id, destination):
             token = value
 
     if token:
-        response = session.get(
-            URL,
-            params={"id": file_id, "confirm": token},
-            stream=True,
-        )
+        response = session.get(URL, params={"id": file_id, "confirm": token}, stream=True)
 
     with open(destination, "wb") as f:
         for chunk in response.iter_content(32768):
             if chunk:
                 f.write(chunk)
 
-@st.cache_resource
-def load_crack_model():
-    if not os.path.exists(MODEL_PATH):
-        with st.spinner("📥 Downloading CNN model..."):
-            download_model(FILE_ID, MODEL_PATH)
-    return tf.keras.models.load_model(MODEL_PATH)
+if not os.path.exists(MODEL_PATH):
+    with st.spinner("📥 Downloading CNN model..."):
+        download_model(FILE_ID, MODEL_PATH)
 
-model = load_crack_model()
+# -----------------------------
+# LOAD TFLITE MODEL
+# -----------------------------
+interpreter = tflite.Interpreter(model_path=MODEL_PATH)
+interpreter.allocate_tensors()
+
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
 
 # -----------------------------
 # IMAGE UPLOAD
@@ -68,11 +69,13 @@ if uploaded_file:
 
     # Preprocessing
     img = image.resize((150, 150))
-    arr = np.array(img) / 255.0
+    arr = np.array(img, dtype=np.float32) / 255.0
     arr = np.expand_dims(arr, axis=0)
 
     # Prediction
-    prediction = model.predict(arr, verbose=0)[0][0]
+    interpreter.set_tensor(input_details[0]['index'], arr)
+    interpreter.invoke()
+    prediction = interpreter.get_tensor(output_details[0]['index'])[0][0]
 
     st.divider()
     st.subheader("📊 Result")
