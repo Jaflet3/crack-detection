@@ -83,4 +83,3 @@ if uploaded_file:
     else:
         st.success(f"✅ No Crack Detected\n\nConfidence: {(1-prediction)*100:.2f}%")
         st.info("🧱 Structure appears safe")
-
