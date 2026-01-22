@@ -21,11 +21,10 @@ st.caption("CNN-based Structural Health Monitoring")
 # GOOGLE DRIVE MODEL DOWNLOAD
 # -----------------------------
 MODEL_PATH = "crack_model.tflite"
-FILE_ID = "your_google_drive_file_id"
+FILE_ID = "your_google_drive_file_id_here"  # Replace with your link's file ID
 
 def download_model(file_id, destination):
     URL = "https://docs.google.com/uc?export=download"
-    import requests
     session = requests.Session()
     response = session.get(URL, params={"id": file_id}, stream=True)
 
